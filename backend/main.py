@@ -89,13 +89,15 @@ async def chat(
     visualizations = []
 
     for item in outputs:
-        filename = item["path"].split("/")[-1]
+        # Cross-platform basename extraction
+        clean_path = item["path"].replace("\\", "/")
+        filename = clean_path.split("/")[-1]
 
         visualizations.append({
             "id": filename,
             "type": "image",
             "data": {
-                "url": f"http://localhost:8000/{filename}"
+                "url": f"http://localhost:8000/outputs/{filename}"
             }
         })
 

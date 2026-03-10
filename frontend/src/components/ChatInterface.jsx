@@ -4,7 +4,7 @@ import { useChat } from "../context/ChatContext";
 
 
 export default function ChatInterface() {
- const { messages, setMessages } = useChat();
+  const { messages, setMessages } = useChat();
   const [isLoading, setIsLoading] = useState(false);
 
   const [inputValue, setInputValue] = useState("");
@@ -19,82 +19,100 @@ export default function ChatInterface() {
     scrollToBottom();
   }, [messages]);
 
- const handleSubmit = async (e) => {
-   e.preventDefault();
-   if (!inputValue.trim() || isLoading) return;
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!inputValue.trim() || isLoading) return;
 
-   const userMessage = inputValue;
+    const userMessage = inputValue;
 
-   setMessages((prev) => [
-     ...prev,
-     { id: Date.now(), text: userMessage, sender: "user" },
-   ]);
+    setMessages((prev) => [
+      ...prev,
+      { id: Date.now(), text: userMessage, sender: "user" },
+    ]);
 
-   setInputValue("");
-   setIsLoading(true);
+    setInputValue("");
+    setIsLoading(true);
 
-   // Add temporary loading bubble
-   const loadingId = Date.now() + 999;
+    // Add temporary loading bubble
+    const loadingId = Date.now() + 999;
 
-   setMessages((prev) => [
-     ...prev,
-     {
-       id: loadingId,
-       text: "Typing...",
-       sender: "ai",
-       loading: true,
-     },
-   ]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: loadingId,
+        text: "Typing...",
+        sender: "ai",
+        loading: true,
+      },
+    ]);
 
-   try {
-     const response = await API.post("/chat", {
-       message: userMessage,
-     });
+    try {
+      const response = await API.post("/chat", {
+        message: userMessage,
+      });
 
-     const { summary, visualizations } = response.data;
+      const { summary, visualizations } = response.data;
 
-     // Remove loading message
-     setMessages((prev) => prev.filter((msg) => msg.id !== loadingId));
+      // Remove loading message
+      setMessages((prev) => prev.filter((msg) => msg.id !== loadingId));
 
-     // Add summary
-     setMessages((prev) => [
-       ...prev,
-       {
-         id: Date.now() + 1,
-         text: summary,
-         sender: "ai",
-       },
-     ]);
+      // Add summary
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          text: summary,
+          sender: "ai",
+        },
+      ]);
 
-     if (visualizations && visualizations.length > 0) {
-       visualizations.forEach((viz) => {
-         setMessages((prev) => [
-           ...prev,
-           {
-             id: Date.now() + Math.random(),
-             sender: "ai",
-             visualization: viz,
-           },
-         ]);
-       });
-     }
-   } catch (error) {
-     console.error("Chat error:", error);
+      if (visualizations && visualizations.length > 0) {
+        visualizations.forEach((viz) => {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: Date.now() + Math.random(),
+              sender: "ai",
+              visualization: viz,
+            },
+          ]);
+        });
+      }
+    } catch (error) {
+      console.error("Chat error:", error);
 
-     setMessages((prev) => prev.filter((msg) => msg.id !== loadingId));
+      setMessages((prev) => prev.filter((msg) => msg.id !== loadingId));
 
-     setMessages((prev) => [
-       ...prev,
-       {
-         id: Date.now(),
-         text: "Error communicating with server.",
-         sender: "ai",
-       },
-     ]);
-   } finally {
-     setIsLoading(false);
-   }
- };
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          text: "Error communicating with server.",
+          sender: "ai",
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDownload = async (url, filename) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename || "visualization.png";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.error("Download failed:", error);
+      window.open(url, '_blank');
+    }
+  };
 
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
@@ -118,16 +136,14 @@ export default function ChatInterface() {
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`chat-bubble-wrapper ${
-              msg.sender === "user" ? "user-wrapper" : "ai-wrapper"
-            }`}
+            className={`chat-bubble-wrapper ${msg.sender === "user" ? "user-wrapper" : "ai-wrapper"
+              }`}
           >
             {msg.sender === "ai" && <div className="avatar ai-avatar">AI</div>}
 
             <div
-              className={`chat-bubble ${
-                msg.sender === "user" ? "bubble-user" : "bubble-ai"
-              }`}
+              className={`chat-bubble ${msg.sender === "user" ? "bubble-user" : "bubble-ai"
+                }`}
             >
               {/* If it's a visualization */}
               {msg.visualization ? (
@@ -146,14 +162,40 @@ export default function ChatInterface() {
                   )}
 
                   {msg.visualization.type === "image" && (
-                    <img
-                      src={msg.visualization.data.url}
-                      alt="Visualization"
-                      style={{
-                        maxWidth: "100%",
-                        borderRadius: "10px",
-                      }}
-                    />
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <img
+                        src={msg.visualization.data.url}
+                        alt="Visualization"
+                        style={{
+                          maxWidth: "100%",
+                          borderRadius: "10px",
+                        }}
+                      />
+                      <button
+                        onClick={() => handleDownload(msg.visualization.data.url, `visualization_${msg.id}.png`)}
+                        style={{
+                          alignSelf: "flex-end",
+                          backgroundColor: "#1e4063",
+                          color: "#fff",
+                          padding: "6px 12px",
+                          border: "none",
+                          borderRadius: "12px",
+                          cursor: "pointer",
+                          fontSize: "0.85rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          fontFamily: "inherit"
+                        }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="7 10 12 15 17 10"></polyline>
+                          <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Download
+                      </button>
+                    </div>
                   )}
                 </>
               ) : msg.loading ? (
@@ -196,7 +238,7 @@ export default function ChatInterface() {
           onChange={handleFileSelect}
         />
 
-      
+
 
         <input
           type="text"
@@ -211,7 +253,7 @@ export default function ChatInterface() {
           }}
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
-          placeholder="Ask a question or upload a PDF..."
+          placeholder="Ask a question..."
         />
 
         <button
