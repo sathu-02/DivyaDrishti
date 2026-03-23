@@ -75,9 +75,30 @@ export default function Navbar() {
 
         {/* Auth Buttons */}
         {user ? (
-          <button onClick={handleLogout} className="nav-btn btn-outline">
-            Logout
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div 
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--accent-primary)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 'bold',
+                fontSize: '1.2rem',
+                textTransform: 'uppercase',
+                boxShadow: 'var(--shadow-sm)'
+              }}
+              title={user.username || user.email || 'User'}
+            >
+              {(user.username || user.email || 'U').charAt(0)}
+            </div>
+            <button onClick={handleLogout} className="nav-btn btn-outline">
+              Logout
+            </button>
+          </div>
         ) : (
           <>
             <Link to="/login" className="nav-btn btn-outline">

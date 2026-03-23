@@ -31,7 +31,7 @@ export default function Signup() {
             await signup(username, email, password);
             navigate('/', { replace: true });
         } catch (err) {
-            setError(error.response?.data?.detail || "Signup failed");
+            setError(err.message || "Signup failed");
         } finally {
             setLoading(false);
         }
