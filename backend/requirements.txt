@@ -9,7 +9,7 @@ python-jose[cryptography]==3.3.0
 langgraph==0.2.20
 langchain-openai==0.1.20
 openai==1.51.0
-pydantic==2.9.2
+pydantic[email]>=2.9.2
 graphviz==0.20.3
 matplotlib==3.9.2
 requests==2.32.3
