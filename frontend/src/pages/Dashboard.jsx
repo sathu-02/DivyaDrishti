@@ -5,17 +5,12 @@ import ChatInterface from '../components/ChatInterface';
 import VisualizationCard from '../components/VisualizationCard';
 import SummaryCard from '../components/SummaryCard';
 import { useAuth } from "../context/AuthContext";
+import ProfileDropdown from "../components/ProfileDropdown";
 
 export default function Dashboard() {
     const [isFileUploaded, setIsFileUploaded] = useState(false);
     const { user, logout } = useAuth(); // ✅ single declaration
     const navigate = useNavigate();
-
-
-    const handleLogout = () => {
-      logout();
-      navigate("/");
-    };
 
     return (
       <div
@@ -103,7 +98,7 @@ export default function Dashboard() {
               alignItems: "center",
               padding: "1.2rem 3rem",
               position: "relative",
-              zIndex: 10,
+              zIndex: 50,
             }}
           >
             <div
@@ -114,7 +109,7 @@ export default function Dashboard() {
                 color: "#b69a74",
               }}
             >
-              Divya Drishti
+              DivyaDhrishti
             </div>
             <nav
               style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}
@@ -131,59 +126,48 @@ export default function Dashboard() {
                 Home
               </Link>
 
-              <Link
-                to="/dashboard"
-                style={{
-                  color: "#b69a74",
-                  fontWeight: "500",
-                  fontSize: "0.9rem",
-                  textDecoration: "none",
-                }}
-              >
-                Dashboard
-              </Link>
+              {user && (
+                <>
+                  <Link
+                    to="/dashboard"
+                    style={{
+                      color: "#b69a74",
+                      fontWeight: "500",
+                      fontSize: "0.9rem",
+                      textDecoration: "none",
+                    }}
+                  >
+                    Dashboard
+                  </Link>
 
-              <Link
-                to="/history"
-                style={{
-                  color: "#3b2a1a",
-                  fontWeight: "500",
-                  fontSize: "0.9rem",
-                  textDecoration: "none",
-                }}
-              >
-                History
-              </Link>
+                  <Link
+                    to="/history"
+                    style={{
+                      color: "#3b2a1a",
+                      fontWeight: "500",
+                      fontSize: "0.9rem",
+                      textDecoration: "none",
+                    }}
+                  >
+                    History
+                  </Link>
 
-              <Link
-                to="/about"
-                style={{
-                  color: "#3b2a1a",
-                  fontWeight: "500",
-                  fontSize: "0.9rem",
-                  textDecoration: "none",
-                }}
-              >
-                About Us
-              </Link>
+                  <Link
+                    to="/about"
+                    style={{
+                      color: "#3b2a1a",
+                      fontWeight: "500",
+                      fontSize: "0.9rem",
+                      textDecoration: "none",
+                    }}
+                  >
+                    About Us
+                  </Link>
+                </>
+              )}
 
               {user ? (
-                <button
-                  onClick={handleLogout}
-                  style={{
-                    background: "#1e4063",
-                    color: "white",
-                    padding: "0.5rem 1.4rem",
-                    borderRadius: "50px",
-                    fontWeight: "500",
-                    fontSize: "0.9rem",
-                    border: "none",
-                    cursor: "pointer",
-                    marginLeft: "1rem",
-                  }}
-                >
-                  Logout
-                </button>
+                <ProfileDropdown />
               ) : (
                 <Link
                   to="/login"

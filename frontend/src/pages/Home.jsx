@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import ProfileDropdown from "../components/ProfileDropdown";
 
 export default function Home() {
   const { user, logout } = useAuth(); // ✅ single declaration
@@ -11,11 +12,6 @@ export default function Home() {
     } else {
       navigate("/login");
     }
-  };
-
-  const handleLogout = () => {
-    logout();
-    navigate("/");
   };
 
   return (
@@ -49,6 +45,8 @@ export default function Home() {
             justifyContent: "space-between",
             alignItems: "center",
             padding: "1.2rem 3rem",
+            position: "relative",
+            zIndex: 50,
           }}
         >
           <div
@@ -59,7 +57,7 @@ export default function Home() {
               color: "#b69a74",
             }}
           >
-            Divya Drishti
+          DivyaDhrishti
           </div>
           <nav style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
             <Link
@@ -73,56 +71,35 @@ export default function Home() {
             >
               Home
             </Link>
-            <Link
-              to="/dashboard"
-              style={{
-                color: "#3b2a1a",
-                fontWeight: "500",
-                fontSize: "0.9rem",
-                textDecoration: "none",
-              }}
-            >
-              Dashboard
-            </Link>
-            <Link
-              to="/history"
-              style={{
-                color: "#3b2a1a",
-                fontWeight: "500",
-                fontSize: "0.9rem",
-                textDecoration: "none",
-              }}
-            >
-              History
-            </Link>
-            <Link
-              to="/about"
-              style={{
-                color: "#3b2a1a",
-                fontWeight: "500",
-                fontSize: "0.9rem",
-                textDecoration: "none",
-              }}
-            >
-              About Us
-            </Link>
+            {user && (
+              <>
+                <Link
+                  to="/dashboard"
+                  style={{ color: "#3b2a1a", fontWeight: "500", fontSize: "0.9rem", textDecoration: "none" }}
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  to="/history"
+                  style={{ color: "#3b2a1a", fontWeight: "500", fontSize: "0.9rem", textDecoration: "none" }}
+                >
+                  History
+                </Link>
+                <Link
+                  to="/about"
+                  style={{
+                    color: "#3b2a1a",
+                    fontWeight: "500",
+                    fontSize: "0.9rem",
+                    textDecoration: "none",
+                  }}
+                >
+                  About Us
+                </Link>
+              </>
+            )}
             {user ? (
-              <button
-                onClick={handleLogout}
-                style={{
-                  background: "#1e4063",
-                  color: "white",
-                  padding: "0.5rem 1.4rem",
-                  borderRadius: "50px",
-                  fontWeight: "500",
-                  fontSize: "0.9rem",
-                  border: "none",
-                  cursor: "pointer",
-                  marginLeft: "1rem",
-                }}
-              >
-                Logout
-              </button>
+              <ProfileDropdown />
             ) : (
               <Link
                 to="/login"

@@ -1,82 +1,128 @@
-import { createContext, useState, useContext, useEffect } from 'react';
-  import axios from "axios";
+import { createContext, useState, useContext } from 'react';
+import axios from "axios";
+
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(() => {
-        // Check localStorage for persistency
         const storedUser = localStorage.getItem('user');
         return storedUser ? JSON.parse(storedUser) : null;
     });
 
+    const API = axios.create({
+        baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000",
+    });
 
+    const login = async (email, password, totpCode = "") => {
+        try {
+            const params = new URLSearchParams();
+            params.append("username", email);
+            params.append("password", password);
+            if (totpCode) {
+                params.append("scope", totpCode);
+            }
 
-  const API = axios.create({
-    baseURL: "http://localhost:8000",
-  });
+            const response = await API.post("/login", params, {
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            });
 
- const login = async (email, password) => {
-   try {
-     const params = new URLSearchParams();
-     params.append("username", email); // MUST BE username
-     params.append("password", password);
+            // Check if 2FA is required
+            if (response.data.requires_2fa && !response.data.access_token) {
+                return { requires_2fa: true, email: response.data.email };
+            }
 
-     const response = await API.post("/login", params, {
-       headers: {
-         "Content-Type": "application/x-www-form-urlencoded",
-       },
-     });
+            const token = response.data.access_token;
+            localStorage.setItem("token", token);
 
-     const token = response.data.access_token;
+            const me = await API.get("/me", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
 
-     localStorage.setItem("token", token);
+            setUser(me.data);
+            localStorage.setItem("user", JSON.stringify(me.data));
 
-     const me = await API.get("/me", {
-       headers: { Authorization: `Bearer ${token}` },
-     });
-
-     setUser(me.data);
-     localStorage.setItem("user", JSON.stringify(me.data));
-
-     return response.data;
-   } catch (error) {
-     throw new Error("Invalid username or password");
-   }
- };
-
-    const logout = () => {
-      setUser(null);
-      localStorage.removeItem("user");
-      localStorage.removeItem("token"); // IMPORTANT
+            return response.data;
+        } catch (error) {
+            const detail = error.response?.data?.detail || "Invalid username or password";
+            throw new Error(detail);
+        }
     };
 
-const signup = async (username, email, password) => {
-  try {
-    const response = await API.post("/signup", {
-      username,
-      email,
-      password,
-    });
+    const logout = () => {
+        setUser(null);
+        localStorage.removeItem("user");
+        localStorage.removeItem("token");
+    };
 
-    const token = response.data.access_token;
+    const signup = async (username, email, password) => {
+        try {
+            const response = await API.post("/signup", {
+                username,
+                email,
+                password,
+            });
 
-    localStorage.setItem("token", token);
+            // Don't store token yet — user needs to verify email OTP first
+            return response.data; // includes { requires_email_verification, email }
+        } catch (error) {
+            throw new Error(error.response?.data?.detail || "Signup failed");
+        }
+    };
 
-    const me = await API.get("/me", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const googleAuth = async (idToken) => {
+        try {
+            const response = await API.post("/auth/google", {
+                id_token: idToken,
+            });
 
-    setUser(me.data);
-    localStorage.setItem("user", JSON.stringify(me.data));
+            const token = response.data.access_token;
+            localStorage.setItem("token", token);
 
-    return response.data;
-  } catch (error) {
-    throw new Error(error.response?.data?.detail || "Signup failed");
-  }
-};
+            const me = await API.get("/me", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            setUser(me.data);
+            localStorage.setItem("user", JSON.stringify(me.data));
+
+            return response.data;
+        } catch (error) {
+            throw new Error(error.response?.data?.detail || "Google sign-in failed");
+        }
+    };
+
+    const verify2FA = async (email, code) => {
+        try {
+            const response = await API.post("/verify-2fa", { email, code });
+            // If verification returns a token (signup flow), store it
+            if (response.data.access_token) {
+                const token = response.data.access_token;
+                localStorage.setItem("token", token);
+                const me = await API.get("/me", {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                setUser(me.data);
+                localStorage.setItem("user", JSON.stringify(me.data));
+            }
+            return response.data;
+        } catch (error) {
+            throw new Error(error.response?.data?.detail || "Verification failed");
+        }
+    };
+
+    const resendOTP = async (email) => {
+        try {
+            const response = await API.post("/resend-otp", { email });
+            return response.data;
+        } catch (error) {
+            throw new Error(error.response?.data?.detail || "Failed to resend OTP");
+        }
+    };
 
     return (
-        <AuthContext.Provider value={{ user, login, logout, signup }}>
+        <AuthContext.Provider value={{ user, login, logout, signup, googleAuth, verify2FA, resendOTP }}>
             {children}
         </AuthContext.Provider>
     );

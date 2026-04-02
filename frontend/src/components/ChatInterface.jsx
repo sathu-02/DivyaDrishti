@@ -1,8 +1,11 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import API from "../api";
 import { useChat } from "../context/ChatContext";
 import { useAuth } from "../context/AuthContext";
 
+const MAX_FILE_SIZE_MB = 5;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const ACCEPTED_TYPES = [".pdf", ".docx", ".doc", ".txt"];
 
 export default function ChatInterface() {
   const { messages, setMessages } = useChat();
@@ -15,6 +18,122 @@ export default function ChatInterface() {
   const [expandedText, setExpandedText] = useState(null);
   const [pastedDraft, setPastedDraft] = useState("");
   const [isEditingDraft, setIsEditingDraft] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0); // 0-100
+
+  // ===== Speech-to-Text (STT) =====
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+        if (finalTranscript) {
+          setInputValue(prev => prev + (prev ? ' ' : '') + finalTranscript);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const toggleListening = useCallback(() => {
+    if (!recognitionRef.current) {
+      alert('Speech recognition is not supported in this browser.');
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current.start();
+      setIsListening(true);
+    }
+  }, [isListening]);
+
+  // ===== Text-to-Speech (Edge Neural TTS via backend) =====
+  const [speakingMsgId, setSpeakingMsgId] = useState(null);
+  const [ttsLoading, setTtsLoading] = useState(null);
+  const audioRef = useRef(null);
+
+  const handleSpeak = useCallback(async (text, msgId) => {
+    // If already playing this message, stop it
+    if (speakingMsgId === msgId) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current = null;
+      }
+      setSpeakingMsgId(null);
+      return;
+    }
+
+    // Stop any currently playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+
+    setTtsLoading(msgId);
+
+    try {
+      const response = await API.post("/tts", {
+        text: text,
+        voice: "en-US-JennyNeural",
+      });
+
+      const audioUrl = response.data.audio_url;
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+
+      audio.onplay = () => {
+        setSpeakingMsgId(msgId);
+        setTtsLoading(null);
+      };
+      audio.onended = () => {
+        setSpeakingMsgId(null);
+        audioRef.current = null;
+      };
+      audio.onerror = () => {
+        setSpeakingMsgId(null);
+        setTtsLoading(null);
+        audioRef.current = null;
+        console.error("Audio playback failed");
+      };
+
+      await audio.play();
+    } catch (error) {
+      console.error("TTS error:", error);
+      setTtsLoading(null);
+      setSpeakingMsgId(null);
+    }
+  }, [speakingMsgId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -123,24 +242,110 @@ export default function ChatInterface() {
     }
   };
 
-  const handleFileSelect = (e) => {
-    const file = e.target.files[0];
+  const [isUploading, setIsUploading] = useState(false);
+
+  const processFile = async (file, inputRef) => {
     if (!file) return;
 
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['pdf', 'docx', 'doc', 'txt'].includes(ext)) {
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now(), text: `❌ Unsupported file: .${ext}. Please upload PDF, DOCX, DOC, or TXT.`, sender: "ai" },
+      ]);
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now(), text: `❌ File too large: ${(file.size/1024/1024).toFixed(1)} MB. Maximum allowed is ${MAX_FILE_SIZE_MB} MB.`, sender: "ai" },
+      ]);
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    // Simulate progress for UX (real progress via onUploadProgress)
     setMessages((prev) => [
       ...prev,
-      {
-        id: Date.now(),
-        text: `Uploaded file: ${file.name}`,
-        sender: "user",
-      },
+      { id: Date.now(), text: `📎 Uploading: ${file.name} (${(file.size/1024).toFixed(0)} KB)...`, sender: "user" },
     ]);
 
-    e.target.value = "";
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await API.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => {
+          if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+        },
+      });
+
+      const { text, filename, length, pages } = response.data;
+      setPastedDraft((prev) => prev ? prev + "\n\n" + text : text);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          text: `✅ Extracted text from "${filename}" — ${(length / 1024).toFixed(1)} KB, ~${pages} section(s).\n\n💡 The content is ready in your input area. Add your question or just hit Send to generate visualizations!`,
+          sender: "ai",
+        },
+      ]);
+    } catch (error) {
+      const detail = error.response?.data?.detail || 'Failed to process file.';
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now(), text: `❌ ${detail}`, sender: "ai" },
+      ]);
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+      if (inputRef) inputRef.value = "";
+    }
+  };
+
+  const handleFileSelect = async (e) => {
+    await processFile(e.target.files[0], e.target);
+  };
+
+  // Drag-and-drop handlers
+  const handleDragOver = (e) => { e.preventDefault(); setIsDragOver(true); };
+  const handleDragLeave = (e) => { e.preventDefault(); setIsDragOver(false); };
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    await processFile(file, null);
   };
 
   return (
-    <div className="chat-container">
+    <div
+      className="chat-container"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      style={{ position: "relative" }}
+    >
+      {/* Drag-over overlay */}
+      {isDragOver && (
+        <div style={{
+          position: "absolute", inset: 0, background: "rgba(30,64,99,0.15)",
+          border: "2px dashed var(--accent-primary)", borderRadius: "16px",
+          zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center",
+          backdropFilter: "blur(2px)",
+        }}>
+          <div style={{ textAlign: "center", color: "var(--accent-primary)" }}>
+            <div style={{ fontSize: "3rem" }}>📂</div>
+            <p style={{ fontWeight: "700", fontSize: "1.1rem", margin: "0.5rem 0 0" }}>Drop your file here</p>
+            <p style={{ fontSize: "0.8rem", opacity: 0.7 }}>PDF, DOCX, DOC, TXT • Max {MAX_FILE_SIZE_MB}MB</p>
+          </div>
+        </div>
+      )}
+
       <div className="chat-messages">
         {messages.map((msg) => (
           <div
@@ -252,8 +457,68 @@ export default function ChatInterface() {
                   </div>
                 </div>
               ) : (
-                <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                  {msg.text}
+                <div>
+                  <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                    {msg.text}
+                  </div>
+                  {msg.sender === "ai" && msg.text && !msg.loading && (
+                    <button
+                      onClick={() => handleSpeak(msg.text, msg.id)}
+                      disabled={ttsLoading === msg.id}
+                      title={speakingMsgId === msg.id ? "Stop" : ttsLoading === msg.id ? "Generating audio..." : "Read aloud"}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        marginTop: '8px',
+                        padding: '4px 10px',
+                        border: 'none',
+                        borderRadius: '20px',
+                        cursor: ttsLoading === msg.id ? 'wait' : 'pointer',
+                        fontSize: '0.75rem',
+                        fontFamily: 'inherit',
+                        transition: 'all 0.2s ease',
+                        background: speakingMsgId === msg.id
+                          ? 'rgba(251, 113, 133, 0.15)'
+                          : ttsLoading === msg.id
+                          ? 'rgba(251, 191, 36, 0.12)'
+                          : 'rgba(30, 64, 99, 0.08)',
+                        color: speakingMsgId === msg.id ? '#fb7185'
+                          : ttsLoading === msg.id ? '#d97706'
+                          : '#64748b',
+                      }}
+                      onMouseOver={(e) => {
+                        if (speakingMsgId !== msg.id && ttsLoading !== msg.id) {
+                          e.currentTarget.style.background = 'rgba(30, 64, 99, 0.15)';
+                          e.currentTarget.style.color = '#1e4063';
+                        }
+                      }}
+                      onMouseOut={(e) => {
+                        if (speakingMsgId !== msg.id && ttsLoading !== msg.id) {
+                          e.currentTarget.style.background = 'rgba(30, 64, 99, 0.08)';
+                          e.currentTarget.style.color = '#64748b';
+                        }
+                      }}
+                    >
+                      {ttsLoading === msg.id ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
+                          <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="10" />
+                        </svg>
+                      ) : speakingMsgId === msg.id ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                          <rect x="6" y="4" width="4" height="16" rx="1" />
+                          <rect x="14" y="4" width="4" height="16" rx="1" />
+                        </svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                          <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                          <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                        </svg>
+                      )}
+                      {ttsLoading === msg.id ? 'Loading...' : speakingMsgId === msg.id ? 'Stop' : 'Listen'}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -293,9 +558,25 @@ export default function ChatInterface() {
           type="file"
           ref={fileInputRef}
           style={{ display: "none" }}
-          accept=".pdf,.csv,.xlsx,.txt"
+          accept=".pdf,.docx,.doc,.txt"
           onChange={handleFileSelect}
         />
+
+        {/* Upload progress bar */}
+        {isUploading && uploadProgress > 0 && (
+          <div style={{ padding: "0 0.5rem 0.5rem" }}>
+            <div style={{ background: "var(--border-color)", borderRadius: "999px", height: "4px", overflow: "hidden" }}>
+              <div style={{
+                height: "100%", background: "var(--accent-primary)",
+                width: `${uploadProgress}%`, transition: "width 0.3s ease",
+                borderRadius: "999px",
+              }} />
+            </div>
+            <p style={{ fontSize: "0.72rem", color: "var(--text-secondary)", margin: "0.3rem 0 0", textAlign: "right" }}>
+              Uploading... {uploadProgress}%
+            </p>
+          </div>
+        )}
 
         {pastedDraft && (
           <div style={{ paddingBottom: "10px", marginBottom: "10px", width: "100%", borderBottom: "1px solid var(--border-color)" }}>
@@ -345,17 +626,43 @@ export default function ChatInterface() {
           </div>
         )}
 
-        <div style={{ display: "flex", alignItems: "center", width: "100%", gap: "10px" }}>
+        <div style={{ display: "flex", alignItems: "center", width: "100%", gap: "8px" }}>
+          {/* Upload Button — LEFT */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            title={`Upload file (PDF, DOCX, DOC, TXT) • Max ${MAX_FILE_SIZE_MB}MB`}
+            style={{
+              background: isUploading ? 'rgba(251, 191, 36, 0.12)' : 'transparent',
+              color: isUploading ? '#d97706' : '#94a3b8',
+              border: isUploading ? 'none' : '1px solid #d1d5db',
+              borderRadius: '50%', width: '36px', height: '36px',
+              cursor: isUploading ? 'wait' : 'pointer',
+              flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseOver={e => { if (!isUploading) { e.currentTarget.style.background = 'rgba(30,64,99,0.1)'; e.currentTarget.style.color = 'var(--accent-primary)'; }}}
+            onMouseOut={e => { if (!isUploading) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#94a3b8'; }}}
+          >
+            {isUploading ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
+                <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="10" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            )}
+          </button>
+
+          {/* Text Input */}
           <input
             type="text"
             style={{
-              flex: 1,
-              border: "none",
-              outline: "none",
-              background: "transparent",
-              padding: "0.5rem 1rem",
-              fontSize: "1rem",
-              color: "var(--text-primary)",
+              flex: 1, border: "none", outline: "none",
+              background: "transparent", padding: "0.5rem 0.5rem",
+              fontSize: "1rem", color: "var(--text-primary)",
             }}
             value={inputValue}
             onPaste={(e) => {
@@ -366,8 +673,37 @@ export default function ChatInterface() {
               }
             }}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Ask a question or paste text..."
+            placeholder={isListening ? "🎤 Listening..." : isUploading ? "⏳ Processing file..." : "Ask anything or paste text..."}
           />
+
+          {/* Microphone Button (STT) */}
+          <button
+            type="button"
+            onClick={toggleListening}
+            title={isListening ? "Stop listening" : "Start voice input"}
+            style={{
+              background: isListening ? "#fb7185" : "transparent",
+              color: isListening ? "white" : "#94a3b8",
+              border: isListening ? "none" : "1px solid #d1d5db",
+              borderRadius: "50%",
+              width: "38px",
+              height: "38px",
+              cursor: "pointer",
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.2s ease",
+              animation: isListening ? "pulse-mic 1.5s ease-in-out infinite" : "none",
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          </button>
 
           <button
             type="submit"
@@ -386,6 +722,18 @@ export default function ChatInterface() {
             ➤
           </button>
         </div>
+
+        {/* Animations */}
+        <style>{`
+          @keyframes pulse-mic {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(251, 113, 133, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(251, 113, 133, 0); }
+          }
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
       </form>
 
       {/* Modal for Expanded Text */}

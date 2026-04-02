@@ -1,19 +1,20 @@
-import { Link, useNavigate} from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import ProfileDropdown from "../components/ProfileDropdown";
 
 
 
 export default function About() {
-     
-     const { user, logout } = useAuth(); // ✅ single declaration
-     const navigate = useNavigate();
 
-     const handleLogout = () => {
-       logout();
-       navigate("/");
-     };
+  const { user, logout } = useAuth(); // ✅ single declaration
+  const navigate = useNavigate();
 
-    
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+  };
+
+
   return (
     <div
       style={{
@@ -100,7 +101,7 @@ export default function About() {
             alignItems: "center",
             padding: "1.2rem 3rem",
             position: "relative",
-            zIndex: 10,
+            zIndex: 50,
           }}
         >
           <div
@@ -111,7 +112,7 @@ export default function About() {
               color: "#b69a74",
             }}
           >
-            Divya Drishti
+            DivyaDhrishti
           </div>
           <nav style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
             <Link
@@ -163,22 +164,7 @@ export default function About() {
             </Link>
 
             {user ? (
-              <button
-                onClick={handleLogout}
-                style={{
-                  background: "#1e4063",
-                  color: "white",
-                  padding: "0.5rem 1.4rem",
-                  borderRadius: "50px",
-                  fontWeight: "500",
-                  fontSize: "0.9rem",
-                  border: "none",
-                  cursor: "pointer",
-                  marginLeft: "1rem",
-                }}
-              >
-                Logout
-              </button>
+              <ProfileDropdown />
             ) : (
               <Link
                 to="/login"
@@ -222,7 +208,7 @@ export default function About() {
                 letterSpacing: "-0.02em",
               }}
             >
-              About Divya Drishti
+              About DivyaDhrishti
             </h1>
             <p
               style={{

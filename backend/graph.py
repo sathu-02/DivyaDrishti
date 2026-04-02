@@ -1,6 +1,6 @@
 """
-backend/graph.py - Complete LangGraph visualization pipeline from model3.ipynb
-Async-compatible for FastAPI. Saves images to 'outputs/' folder.
+backend/graph.py - Complete LangGraph visualization pipeline
+Async-compatible for FastAPI. Saves premium-quality images to 'outputs/' folder.
 """
 
 import os
@@ -10,18 +10,22 @@ import base64
 import re
 import requests
 from typing import TypedDict, List, Dict, Any, Literal
+import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for server
 import matplotlib.pyplot as plt
-from graphviz import Digraph
+import matplotlib.colors as mcolors
+from matplotlib import patheffects
+from graphviz import Digraph, Graph
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
+from pathlib import Path
 from langgraph.graph import StateGraph, END
-from graphviz import Digraph, Graph
-from openai import AsyncOpenAI, OpenAI
 
-load_dotenv()
+# Load .env from project root
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 MODEL_NAME = "gpt-4o-mini"
 
@@ -29,11 +33,63 @@ openai_client = AsyncOpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
-os.makedirs("outputs", exist_ok=True)  # Updated to available model (gpt-5-mini not real)
+os.makedirs("outputs", exist_ok=True)
+
+# =================== PREMIUM COLOR PALETTES ===================
+PALETTE = {
+    "bg_dark": "#0f172a",
+    "bg_card": "#1e293b",
+    "text_primary": "#f8fafc",
+    "text_secondary": "#94a3b8",
+    "grid": "#334155",
+    "accent_blue": "#38bdf8",
+    "accent_cyan": "#22d3ee",
+    "accent_violet": "#a78bfa",
+    "accent_rose": "#fb7185",
+    "accent_amber": "#fbbf24",
+    "accent_emerald": "#34d399",
+    "accent_orange": "#fb923c",
+    "accent_pink": "#f472b6",
+}
+
+CHART_COLORS = [
+    "#38bdf8", "#a78bfa", "#fb7185", "#34d399", "#fbbf24",
+    "#22d3ee", "#fb923c", "#f472b6", "#818cf8", "#4ade80",
+    "#e879f9", "#f97316", "#06b6d4", "#8b5cf6", "#ef4444",
+]
+
+def _setup_premium_style():
+    """Apply premium dark theme to matplotlib."""
+    plt.rcParams.update({
+        'figure.facecolor': PALETTE["bg_dark"],
+        'axes.facecolor': PALETTE["bg_card"],
+        'axes.edgecolor': PALETTE["grid"],
+        'axes.labelcolor': PALETTE["text_primary"],
+        'axes.titlesize': 16,
+        'axes.titleweight': 'bold',
+        'axes.labelsize': 12,
+        'axes.grid': True,
+        'grid.color': PALETTE["grid"],
+        'grid.alpha': 0.3,
+        'grid.linestyle': '--',
+        'text.color': PALETTE["text_primary"],
+        'xtick.color': PALETTE["text_secondary"],
+        'ytick.color': PALETTE["text_secondary"],
+        'xtick.labelsize': 10,
+        'ytick.labelsize': 10,
+        'legend.facecolor': PALETTE["bg_card"],
+        'legend.edgecolor': PALETTE["grid"],
+        'legend.fontsize': 10,
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Segoe UI', 'Arial', 'Helvetica', 'DejaVu Sans'],
+        'figure.dpi': 150,
+        'savefig.dpi': 200,
+        'savefig.bbox': 'tight',
+        'savefig.pad_inches': 0.3,
+    })
 
 
-
-# Models (from notebook)
+# =================== MODELS ===================
 class GraphState(TypedDict):
     text: str
     analysis: Dict[str, Any]
@@ -61,66 +117,74 @@ class AnalysisOutput(BaseModel):
     summary: str
     visualizations: List[VisualizationSpec] = Field(default_factory=list)
 
-# Planner Node (from notebook, sync → async)
+
+# =================== PLANNER NODE ===================
 async def planner_node(state: GraphState):
-    # Allow full text since gpt-4o-mini has a 128k context window
     text = state["text"] if state.get("text") else ""
-    system_prompt = """You are a visualization planner, you read the text and decide what visualizations to create.
-Basically you are a information representer, you read the text and decide how to represent the information in the best way possible way generating images. You can use matplotlib for data, graphviz for flows/trees/pipelines, and diffusion for conceptual identification. You generate a JSON output.
-You are master of these libraries and know how to use them (matplotlib, graphviz) and you decide best suitable visualization among the available visualiations in those libraries(like graphs, bar charts, histograms, heatmaps etc..) based on the text. 
+    system_prompt = """You are an expert visualization planner and data storyteller. You read text and create stunning, informative visual representations.
 
-Not all type (matplot, graphviz, diffusion) of visualizations are needed to be used all the times, you can decide it based on the suitability.
+You can use:
+- **matplotlib** for quantitative data (charts, graphs, plots)
+- **graphviz** for relationships, flows, timelines, hierarchies, pipelines
+- **diffusion** for conceptual/artistic illustrations
 
-Your main task is to represent entire information into images, so you need to decide best suitable visualization type and generate data for it. You MUST generate a diverse set of visual representations including graphviz (for timelines/flows) and diffusion (for conceptual images) alongside matplotlib whenever appropriate. Try to give at least one graphviz and one diffusion if the content allows. Generating high quality images is your FIRST priority. 
+IMPORTANT GUIDELINES:
+1. Choose the BEST visualization type for each piece of information
+2. Not all types need to be used every time — pick what fits best
+3. Ensure ALL key information from the text is represented visually
+4. Generate data ONLY from the provided text, never from external knowledge
+5. Try to include at least one graphviz diagram if the content has any flow, process, or relationship
 
-Additionally, you MUST provide a detailed bullet-point summary covering the text comprehensively. This summary MUST strictly be a descriptive list containing 4 to 15 highly detailed points, where each point is a full descriptive sentence. 
-CRITICAL RULE: This summary MUST be placed entirely INSIDE the "summary" string field of your JSON response. Use literal newline characters (\\n) and bullet symbols (-) within the string to format the points. Do NOT output the summary outside of the JSON block.
+SUMMARY RULES:
+- Provide a DETAILED, INSIGHTFUL bullet-point summary with 5-12 key takeaways
+- Each point must be crisp but INFORMATIVE (max 20 words per point)
+- Highlight trends, anomalies, or important patterns
+- Summarize key facts, do NOT just list topics — give actual insights
+- Use simple, direct language. Avoid filler words
+- Place the summary INSIDE the "summary" field using \\n and - for formatting
+- Do NOT output summary outside the JSON block
+
 Return STRICT JSON only.
 
-You need to make sure that visualizations are strictly based on only the information/text provided and not on any external information or your knowledge.
-You also need to make sure that entire information is represented into visuals and nothing is left out.
-MANDATORY RULES:
+MANDATORY DATA RULES:
 
-If type is matplotlib:
+For matplotlib:
 - data MUST include:
- - chart_type ('line', 'bar', 'pie', 'scatter', 'heatmap', etc)
- - x (array of strings or numbers). For 'pie', x is the array of wedge labels.
- - y (array of NUMBERS only, e.g. [10, 20, 30]). For 'pie', y is the array of wedge sizes. For 'heatmap', y must be a 1D array of numbers that can form a square matrix.
+  - chart_type: one of 'line', 'bar', 'horizontal_bar', 'pie', 'donut', 'scatter', 'heatmap', 'area', 'radar', 'stacked_bar'
+  - x: array of strings or numbers (for pie/donut: wedge labels)
+  - y: array of NUMBERS only (for pie/donut: sizes; for heatmap: 1D array for matrix)
+  - Optional: x_label, y_label, label, colors (array of hex colors)
+- ALWAYS generate at least 5-8 data points from the text for richer charts
+- For bar/line/pie: pick the MOST SIGNIFICANT quantitative values from data
+- If text has no explicit numbers, estimate relative proportions from qualitative importance
 
-If type is graphviz (flows/trees/pipelines/timelines/fishbone):
-- data MUST include: nodes (array of strings or [{'id':str, 'attrs':{shape:'ellipse', color:'red'}}]), edges (array of [from,to] or [{'from':str, 'to':str, 'attrs':{label:'step1', color:'green'}}])
-- Optional: graph_type ('digraph'), clusters ({'Models': ['node1','node2']}), node_attrs/shape/color, edge_attrs/label
-- For timelines or fishbone diagrams, use graphviz and specify "prompt": "horizontal" so it renders left-to-right (LR). Create sequential edges for distinct events.
+For graphviz:
+- data MUST include: 
+  - nodes: array of strings OR array of objects with {id, attrs: {shape, color, label}}
+  - edges: array of [from, to] OR array of {from, to, attrs: {label, color}}
+  - Optional: graph_type ('digraph' or 'graph'), clusters ({name: [nodes]}), node_attrs, edge_attrs
+- For timelines/horizontal flows: set prompt to "horizontal"
+- Add cluster groupings whenever there are logical categories of nodes
 
-
-If conceptual:
-- use diffusion with a detailed prompt, generate .png based images
-
-Never leave data empty.
+For diffusion:
+- prompt MUST be detailed and descriptive for image generation
+- Describe the scene, style, colors, mood in detail
 
 Schema:
 {
- "summary": "...",
- "visualizations": [
- {
- "type": "matplotlib | graphviz | diffusion",
- "title": "...",
- "description": "...",
- "data": {...},
- "prompt": "..."
- }
- ]
+  "summary": "- Point 1\\n- Point 2\\n...",
+  "visualizations": [
+    {
+      "type": "matplotlib | graphviz | diffusion",
+      "title": "Clear, descriptive title",
+      "description": "What this visualization shows",
+      "data": {...},
+      "prompt": "styling hints or diffusion prompt"
+    }
+  ]
 }
-MANDATORY RULES:
 
-For matplotlib (best for data):
-- data MUST include: chart_type ('line', 'bar', 'scatter', 'hist', 'box', 'pie', 'heatmap', 'area', 'violin', 'stacked_bar', etc.), x (array of strings or numbers), y (array of numbers)
-- Add detailed 'prompt' for styling (e.g., "highlight anomalies in red")
-
-For graphviz (flows/trees/timelines): 
-- Use graphviz for timelines, org charts, relationships, fishbone. Provide nodes/edges that link chronological or hierarchical steps.
-
-Never leave data empty. LLM decides best type based on text (e.g., time-series/data → line/bar/pie; categories → bar/pie; flows/timelines → graphviz; concepts → diffusion)."""
+For maximum quality: Generate 2-4 diverse visualizations. Prefer matplotlib for quantities and graphviz for relationships. Never leave data empty."""
 
     client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     response = await client.chat.completions.create(
@@ -129,24 +193,28 @@ Never leave data empty. LLM decides best type based on text (e.g., time-series/d
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
         ],
+        response_format={"type": "json_object"},
+        max_tokens=4096,
+        temperature=0.3,  # Lower temperature = more consistent, reliable JSON
     )
 
     content = response.choices[0].message.content
     # Robust JSON extraction & cleaning
-    content = re.sub(r'```json|```', '', content.strip())  # Remove markdown fences
-    content = re.sub(r'//.*', '', content)  # Remove comments
+    content = re.sub(r'```json|```', '', content.strip())
+    content = re.sub(r'//.*', '', content)
     if '{' in content and '}' in content:
-        content = '{' + content.split('{', 1)[-1].rsplit('}', 1)[0] + '}'  # Extract JSON block
+        content = '{' + content.split('{', 1)[-1].rsplit('}', 1)[0] + '}'
 
     try:
         parsed_dict = json.loads(content)
         parsed = AnalysisOutput.model_validate(parsed_dict)
     except Exception as e:
-        print(f"JSON parse failed: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"JSON parse failed: {e}\n{error_details}")
         print("Raw LLM output:", content[:500])
-        # Fallback minimal output
         parsed = AnalysisOutput(
-            summary="Fallback summary: visualization planning failed.",
+            summary=f"Fallback summary: visualization planning failed. Error: {str(e)}",
             visualizations=[]
         )
 
@@ -155,118 +223,249 @@ Never leave data empty. LLM decides best type based on text (e.g., time-series/d
 
     return {"analysis": parsed.model_dump()}
 
-# Visualization Adapters (fixed from notebook errors)
+
+# =================== PREMIUM MATPLOTLIB ADAPTER ===================
 def matplotlib_adapter(spec: VisualizationSpec):
     spec.validate_data()
+    _setup_premium_style()
+
     data = spec.data
     x = data.get('x', [])
     y = data.get('y', [])
-    
-    # Ensure y values are numeric for bar/line charts
+
+    # Ensure y values are numeric
     try:
         if isinstance(y, list) and len(y) > 0:
             y = [float(v) if str(v).replace('.','',1).replace('-','',1).isdigit() else v for v in y]
     except Exception:
         pass
-        
-    chart_type = data.get('chart_type', 'line').lower()
-    prompt = spec.prompt
 
-    plt.figure(figsize=(10, 6))
+    chart_type = data.get('chart_type', 'line').lower()
+    prompt = spec.prompt or ""
+    custom_colors = data.get('colors', None)
+    colors = custom_colors if custom_colors else CHART_COLORS
+
+    fig, ax = plt.subplots(figsize=(12, 7))
+
     try:
         if chart_type == 'bar':
-            plt.bar(x, y)
+            bars = ax.bar(x, y, color=colors[:len(x)], width=0.6, edgecolor='none',
+                         zorder=3, alpha=0.9)
+            # Add value labels on top
+            for bar, val in zip(bars, y):
+                ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + max(y)*0.02,
+                       f'{val:,.1f}' if isinstance(val, float) else f'{val:,}',
+                       ha='center', va='bottom', fontsize=9, fontweight='bold',
+                       color=PALETTE["text_primary"])
+            # Add subtle gradient effect
+            for bar, c in zip(bars, colors[:len(x)]):
+                bar.set_alpha(0.85)
+            ax.set_axisbelow(True)
+
+        elif chart_type == 'horizontal_bar':
+            bars = ax.barh(x, y, color=colors[:len(x)], height=0.6, edgecolor='none',
+                          zorder=3, alpha=0.9)
+            for bar, val in zip(bars, y):
+                ax.text(bar.get_width() + max(y)*0.02, bar.get_y() + bar.get_height()/2.,
+                       f'{val:,.1f}' if isinstance(val, float) else f'{val:,}',
+                       ha='left', va='center', fontsize=9, fontweight='bold',
+                       color=PALETTE["text_primary"])
+
         elif chart_type == 'scatter':
-            plt.scatter(x, y)
+            scatter = ax.scatter(x, y, c=colors[0], s=80, alpha=0.8, edgecolors='white',
+                                linewidth=0.5, zorder=3)
+
         elif chart_type == 'line':
-            plt.plot(x, y)
+            ax.plot(x, y, color=colors[0], linewidth=2.5, marker='o', markersize=6,
+                   markerfacecolor='white', markeredgecolor=colors[0], markeredgewidth=2,
+                   zorder=3, alpha=0.9)
+            # Fill area under line
+            ax.fill_between(range(len(x)) if not all(isinstance(v, (int, float)) for v in x) else x,
+                           y, alpha=0.1, color=colors[0])
+            if not all(isinstance(v, (int, float)) for v in x):
+                ax.set_xticks(range(len(x)))
+                ax.set_xticklabels(x, rotation=45, ha='right')
+
         elif chart_type in ['histogram', 'hist']:
-            if x:
-                plt.hist(x, bins=10)
-            else:
-                raise ValueError("Histogram needs 'x' data")
+            ax.hist(x if x else y, bins=min(15, len(x) if x else 10),
+                   color=colors[0], edgecolor=PALETTE["bg_dark"], alpha=0.85, zorder=3)
+
         elif chart_type in ['box', 'boxplot']:
-            plt.boxplot(y)
-        elif chart_type == 'pie':
-            plt.pie(y, labels=x)
+            bp = ax.boxplot(y, patch_artist=True, widths=0.5,
+                           boxprops=dict(facecolor=colors[0], alpha=0.7),
+                           medianprops=dict(color=PALETTE["accent_amber"], linewidth=2),
+                           whiskerprops=dict(color=PALETTE["text_secondary"]),
+                           capprops=dict(color=PALETTE["text_secondary"]),
+                           flierprops=dict(markerfacecolor=PALETTE["accent_rose"], markersize=6))
+
+        elif chart_type in ['pie', 'donut']:
+            # Premium pie/donut chart
+            fig_pie, ax_pie = plt.subplots(figsize=(10, 10))
+            ax_pie.set_facecolor(PALETTE["bg_dark"])
+            fig_pie.set_facecolor(PALETTE["bg_dark"])
+
+            wedge_colors = colors[:len(x)]
+            explode = [0.03] * len(x)
+
+            wedges, texts, autotexts = ax_pie.pie(
+                y, labels=None, autopct='%1.1f%%', startangle=90,
+                colors=wedge_colors, explode=explode,
+                pctdistance=0.8 if chart_type == 'donut' else 0.6,
+                wedgeprops=dict(width=0.55 if chart_type == 'donut' else 1,
+                               edgecolor=PALETTE["bg_dark"], linewidth=2)
+            )
+            for t in autotexts:
+                t.set_color(PALETTE["text_primary"])
+                t.set_fontsize(10)
+                t.set_fontweight('bold')
+
+            ax_pie.legend(wedges, x, loc='lower center', ncol=min(4, len(x)),
+                         fontsize=9, frameon=True, fancybox=True,
+                         facecolor=PALETTE["bg_card"], edgecolor=PALETTE["grid"],
+                         labelcolor=PALETTE["text_primary"],
+                         bbox_to_anchor=(0.5, -0.05))
+
+            ax_pie.set_title(spec.title, fontsize=18, fontweight='bold',
+                            color=PALETTE["text_primary"], pad=20)
+
+            plt.close(fig)  # Close the original figure
+            fig = fig_pie
+            ax = ax_pie
+
         elif chart_type == 'heatmap':
-            import numpy as np
             if not y:
-                matrix = np.random.rand(10,10)
+                matrix = np.random.rand(10, 10)
             else:
-                # Try to determine shape dynamically, especially for non-square matrices
                 elements = len(y)
                 cols = len(x) if x and len(x) > 0 else int(elements**0.5)
-                # Ensure the number of elements is perfectly divisible by cols
                 if cols > 0 and elements % cols != 0:
-                    # Find the nearest factor
                     for i in range(int(elements**0.5), 0, -1):
                         if elements % i == 0:
                             cols = elements // i
                             break
-                            
                 rows = elements // cols if cols > 0 else 0
-                
                 try:
                     matrix = np.array(y).reshape(rows, cols)
                 except ValueError:
-                    # Fallback to square root if calculation fails
                     dim = int(elements**0.5)
                     matrix = np.array(y[:dim*dim]).reshape(dim, dim)
-                    
-            plt.imshow(matrix, cmap='hot', aspect='auto')
+
+            im = ax.imshow(matrix, cmap='magma', aspect='auto', interpolation='nearest')
             if x and len(x) == matrix.shape[1]:
-                plt.xticks(range(len(x)), x, rotation=45, ha='right')
-            plt.colorbar()
+                ax.set_xticks(range(len(x)))
+                ax.set_xticklabels(x, rotation=45, ha='right')
+            cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            cbar.ax.yaxis.set_tick_params(color=PALETTE["text_secondary"])
+            cbar.outline.set_edgecolor(PALETTE["grid"])
+            plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color=PALETTE["text_secondary"])
+
         elif chart_type == 'area':
-            plt.fill_between(x, y)
+            ax.fill_between(range(len(x)) if not all(isinstance(v, (int, float)) for v in x) else x,
+                           y, alpha=0.3, color=colors[0])
+            ax.plot(range(len(x)) if not all(isinstance(v, (int, float)) for v in x) else x,
+                   y, color=colors[0], linewidth=2, zorder=3)
+            if not all(isinstance(v, (int, float)) for v in x):
+                ax.set_xticks(range(len(x)))
+                ax.set_xticklabels(x, rotation=45, ha='right')
+
         elif chart_type == 'violin':
-            plt.violinplot(y)
-        elif chart_type in ['stacked_area', 'stackedarea']:
-            if isinstance(y, dict) and 'series_values' in y:
-                series_data = y['series_values']
-            elif isinstance(y[0] if y else [], list):
-                series_data = y
-            else:
-                series_data = [y]
-            plt.stackplot(x, *series_data, labels=y.get('series_labels', ['Series']))
-            plt.legend()
+            parts = ax.violinplot(y, showmeans=True, showmedians=True)
+            for pc in parts.get('bodies', []):
+                pc.set_facecolor(colors[0])
+                pc.set_alpha(0.7)
+
         elif chart_type == 'stacked_bar':
-            plt.bar(x, y[0] if y else [], label='A')
-            if len(y) > 1:
-                plt.bar(x, y[1], bottom=y[0], label='B')
+            if isinstance(y, list) and len(y) > 0 and isinstance(y[0], list):
+                bottom = np.zeros(len(x))
+                for i, series in enumerate(y):
+                    ax.bar(x, series, bottom=bottom, color=colors[i % len(colors)],
+                          alpha=0.85, label=f'Series {i+1}', edgecolor='none', zorder=3)
+                    bottom += np.array(series)
+                ax.legend()
+            else:
+                ax.bar(x, y, color=colors[0], alpha=0.85, edgecolor='none', zorder=3)
+
+        elif chart_type == 'radar':
+            fig_r, ax_r = plt.subplots(figsize=(10, 10), subplot_kw=dict(polar=True))
+            fig_r.set_facecolor(PALETTE["bg_dark"])
+            ax_r.set_facecolor(PALETTE["bg_card"])
+            
+            angles = np.linspace(0, 2 * np.pi, len(x), endpoint=False).tolist()
+            values = y + [y[0]]
+            angles += angles[:1]
+            
+            ax_r.plot(angles, values, color=colors[0], linewidth=2, zorder=3)
+            ax_r.fill(angles, values, color=colors[0], alpha=0.2)
+            ax_r.set_xticks(angles[:-1])
+            ax_r.set_xticklabels(x, color=PALETTE["text_primary"], fontsize=10)
+            ax_r.set_title(spec.title, fontsize=18, fontweight='bold',
+                          color=PALETTE["text_primary"], pad=30)
+            ax_r.grid(color=PALETTE["grid"], alpha=0.3)
+            ax_r.spines['polar'].set_color(PALETTE["grid"])
+            ax_r.tick_params(colors=PALETTE["text_secondary"])
+            
+            plt.close(fig)
+            fig = fig_r
+            ax = ax_r
+
         else:
-            plt.plot(x, y)  # Fallback
+            ax.plot(x, y, color=colors[0], linewidth=2.5, marker='o', markersize=5,
+                   zorder=3, alpha=0.9)
 
-        plt.title(spec.title)
-        plt.xlabel(data.get('x_label', 'X'))
-        plt.ylabel(data.get('y_label', 'Y'))
-        plt.grid(True)
-        if chart_type not in ['pie', 'heatmap']:
-            label = data.get('label', spec.title)
-            plt.legend([label])
+        # Apply title and labels (skip for pie/donut/radar which handle their own)
+        if chart_type not in ['pie', 'donut', 'radar']:
+            ax.set_title(spec.title, fontsize=16, fontweight='bold',
+                        color=PALETTE["text_primary"], pad=15,
+                        path_effects=[patheffects.withStroke(linewidth=0, foreground='black')])
+            ax.set_xlabel(data.get('x_label', ''), fontsize=12, color=PALETTE["text_secondary"], labelpad=10)
+            ax.set_ylabel(data.get('y_label', ''), fontsize=12, color=PALETTE["text_secondary"], labelpad=10)
 
-        if 'red' in prompt.lower():
-            plt.scatter(x[::5], y[::5], color='red', zorder=5)
-        plt.tight_layout()
+            # Rotate x labels if they're strings and numerous
+            if isinstance(x, list) and len(x) > 5 and all(isinstance(v, str) for v in x):
+                plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+
+            # Remove top and right spines for cleaner look
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color(PALETTE["grid"])
+            ax.spines['bottom'].set_color(PALETTE["grid"])
+
+        # Add watermark
+        fig.text(0.99, 0.01, 'DivyaDhrishti', fontsize=8, color=PALETTE["text_secondary"],
+                alpha=0.4, ha='right', va='bottom', style='italic')
+
+        fig.tight_layout()
 
     except Exception as e:
-        print(f"Chart error: {e}")
-        plt.text(0.5, 0.5, f'Error rendering {chart_type}', ha='center', va='center', transform=plt.gca().transAxes)
+        print(f"Chart error ({chart_type}): {e}")
+        import traceback
+        traceback.print_exc()
+        ax.text(0.5, 0.5, f'Error rendering {chart_type}\n{str(e)[:80]}',
+               ha='center', va='center', transform=ax.transAxes,
+               color=PALETTE["accent_rose"], fontsize=12)
 
     safe_title = re.sub(r'[^a-zA-Z0-9]', '_', spec.title)[:40]
     filename = f"{safe_title}_{uuid.uuid4().hex[:6]}.png"
     path = os.path.join("outputs", filename)
-    
+
     try:
-        plt.savefig(path, bbox_inches='tight', dpi=150)
+        fig.savefig(path, bbox_inches='tight', dpi=200,
+                   facecolor=fig.get_facecolor(), edgecolor='none')
     except Exception as save_err:
         print(f"Failed to save matplotlib image: {save_err}")
     finally:
-        plt.close()
-        
+        plt.close(fig)
+
     print(f"Matplotlib ({chart_type}) saved → {path}")
     return path
+
+
+# =================== PREMIUM GRAPHVIZ ADAPTER ===================
+# Modern color scheme for graphviz nodes
+GV_NODE_COLORS = [
+    "#38bdf8", "#a78bfa", "#fb7185", "#34d399", "#fbbf24",
+    "#22d3ee", "#fb923c", "#f472b6",
+]
 
 def graphviz_adapter(spec: VisualizationSpec):
     spec.validate_data()
@@ -274,51 +473,110 @@ def graphviz_adapter(spec: VisualizationSpec):
     nodes = data.get('nodes', [])
     edges = data.get('edges', [])
     graph_type = data.get('graph_type', 'digraph').lower()
-    prompt = spec.prompt.lower()
+    prompt = (spec.prompt or "").lower()
 
     if graph_type == 'graph':
         graph = Graph(comment=spec.title)
     else:
         graph = Digraph(comment=spec.title)
 
-    graph.attr(rankdir='TB' if 'vertical' in prompt else 'LR')
-    graph.attr('node', shape='box', style='filled', fillcolor='lightblue', fontsize='10')
-    graph.attr('edge', color='darkblue', fontsize='9')
+    # Premium graph attributes
+    graph.attr(
+        rankdir='LR' if 'horizontal' in prompt else 'TB',
+        bgcolor='#0f172a',
+        pad='0.5',
+        nodesep='0.8',
+        ranksep='1.0',
+        dpi='200',
+        label=f'<<FONT COLOR="#f8fafc" POINT-SIZE="20"><B>{spec.title}</B></FONT>>',
+        labelloc='t',
+        labeljust='c',
+        fontname='Segoe UI',
+    )
 
-    # Clusters
+    # Premium node defaults
+    graph.attr('node',
+        shape='box',
+        style='filled,rounded',
+        fillcolor='#1e293b',
+        color='#334155',
+        fontcolor='#f8fafc',
+        fontsize='11',
+        fontname='Segoe UI',
+        penwidth='1.5',
+        margin='0.3,0.2',
+    )
+
+    # Premium edge defaults
+    graph.attr('edge',
+        color='#64748b',
+        fontcolor='#94a3b8',
+        fontsize='9',
+        fontname='Segoe UI',
+        penwidth='1.5',
+        arrowsize='0.8',
+    )
+
+    # Clusters with premium styling
     clusters = data.get('clusters', {})
-    for cluster_id, cluster_nodes in clusters.items():
+    for idx, (cluster_id, cluster_nodes) in enumerate(clusters.items()):
         safe_cluster = re.sub(r'[^a-zA-Z0-9_-]', '_', str(cluster_id))[:20]
+        c_color = GV_NODE_COLORS[idx % len(GV_NODE_COLORS)]
         with graph.subgraph(name=f'cluster_{safe_cluster}') as c:
-            c.attr(label=cluster_id, style='filled', color='lightgrey')
+            c.attr(
+                label=f'<<FONT COLOR="#f8fafc" POINT-SIZE="12"><B>{cluster_id}</B></FONT>>',
+                style='filled,rounded',
+                color=c_color,
+                fillcolor='#1e293b',
+                penwidth='2',
+            )
             for node in cluster_nodes:
                 safe_node = re.sub(r'[^a-zA-Z0-9_-]', '_', str(node))[:30]
-                c.node(safe_node, fillcolor='white')
+                c.node(safe_node, fillcolor='#0f172a')
 
-    # Nodes
-    default_node_attrs = data.get('node_attrs', {'shape':'box', 'style':'filled'})
-    for node_data in nodes:
+    # Add nodes with color cycling
+    default_node_attrs = data.get('node_attrs', {})
+    for i, node_data in enumerate(nodes):
+        node_color = GV_NODE_COLORS[i % len(GV_NODE_COLORS)]
         if isinstance(node_data, str):
             node_id = re.sub(r'[^a-zA-Z0-9_ -]', '_', node_data)[:50]
-            graph.node(node_id, **default_node_attrs)
+            attrs = {
+                'fillcolor': f'{node_color}22',
+                'color': node_color,
+                'fontcolor': '#f8fafc',
+                'style': 'filled,rounded',
+                **default_node_attrs,
+            }
+            graph.node(node_id, **attrs)
         else:
             node_id = re.sub(r'[^a-zA-Z0-9_-]', '_', str(node_data.get('id', '')))[:30]
-            node_attrs = {**default_node_attrs, **node_data.get('attrs', {})}
-            if 'color' in node_attrs and 'fillcolor' not in node_attrs:
-                node_attrs['fillcolor'] = node_attrs['color']
+            node_attrs = {
+                'fillcolor': f'{node_color}22',
+                'color': node_color,
+                'fontcolor': '#f8fafc',
+                'style': 'filled,rounded',
+                **default_node_attrs,
+                **node_data.get('attrs', {}),
+            }
+            if 'color' in node_attrs and 'fillcolor' not in node_data.get('attrs', {}):
+                nc = node_attrs['color']
+                node_attrs['fillcolor'] = f'{nc}22' if nc.startswith('#') else nc
             graph.node(node_id, **node_attrs)
 
-    # Edges
+    # Add edges with premium styling
     default_edge_attrs = data.get('edge_attrs', {})
-    for edge_data in edges:
+    for idx, edge_data in enumerate(edges):
+        e_color = GV_NODE_COLORS[idx % len(GV_NODE_COLORS)]
         if isinstance(edge_data, list) and len(edge_data) == 2:
             from_node = re.sub(r'[^a-zA-Z0-9_-]', '_', str(edge_data[0]))[:30]
             to_node = re.sub(r'[^a-zA-Z0-9_-]', '_', str(edge_data[1]))[:30]
-            graph.edge(from_node, to_node, **default_edge_attrs)
+            graph.edge(from_node, to_node, color=f'{e_color}99', **default_edge_attrs)
         else:
             from_node = re.sub(r'[^a-zA-Z0-9_-]', '_', str(edge_data.get('from', '')))[:30]
             to_node = re.sub(r'[^a-zA-Z0-9_-]', '_', str(edge_data.get('to', '')))[:30]
             edge_attrs = {**default_edge_attrs, **edge_data.get('attrs', {})}
+            if 'color' not in edge_attrs:
+                edge_attrs['color'] = f'{e_color}99'
             graph.edge(from_node, to_node, **edge_attrs)
 
     safe_title = re.sub(r'[^a-zA-Z0-9]', '_', spec.title)[:40]
@@ -335,7 +593,8 @@ def graphviz_adapter(spec: VisualizationSpec):
         print(f"Local Graphviz failed. Attempting QuickChart API fallback... ({e})")
         full_path = f"{path}.png"
         try:
-            resp = requests.post("https://quickchart.io/graphviz", json={"graph": graph.source, "format": "png"}, timeout=10)
+            resp = requests.post("https://quickchart.io/graphviz",
+                json={"graph": graph.source, "format": "png"}, timeout=15)
             if resp.status_code == 200:
                 with open(full_path, 'wb') as f:
                     f.write(resp.content)
@@ -346,15 +605,21 @@ def graphviz_adapter(spec: VisualizationSpec):
         except Exception as qc_e:
             print(f"QuickChart fallback also failed: {qc_e}")
             fallback_path = os.path.join("outputs", f"fallback_{safe_uuid}.png")
-            # Generate an actual placeholder image
-            plt.figure(figsize=(6, 4))
-            plt.text(0.5, 0.5, f"All Flowchart Renders Failed\nNo local Graphviz & API failed.\n{str(e)[:50]}", 
-                     ha='center', va='center', wrap=True)
-            plt.axis('off')
-            plt.savefig(fallback_path, bbox_inches='tight', dpi=100)
-            plt.close()
+            _setup_premium_style()
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.text(0.5, 0.5,
+                f"Flowchart Render Failed\nGraphviz not installed locally\n& API fallback failed.\n\n{str(e)[:60]}",
+                ha='center', va='center', fontsize=12, color=PALETTE["accent_rose"],
+                transform=ax.transAxes, wrap=True)
+            ax.set_title(spec.title, fontsize=14, color=PALETTE["text_primary"])
+            ax.axis('off')
+            fig.savefig(fallback_path, bbox_inches='tight', dpi=150,
+                       facecolor=PALETTE["bg_dark"])
+            plt.close(fig)
             return fallback_path
 
+
+# =================== DIFFUSION ADAPTER ===================
 async def diffusion_adapter(spec: VisualizationSpec, openai_client: AsyncOpenAI):
     spec.validate_data()
 
@@ -363,16 +628,13 @@ async def diffusion_adapter(spec: VisualizationSpec, openai_client: AsyncOpenAI)
     filename = f"{safe_title}_{safe_uuid}.png"
     path = os.path.join("outputs", filename)
 
-    import asyncio
-    loop = asyncio.get_event_loop()
-
     try:
-        result = await (openai_client.images.generate(
+        result = await openai_client.images.generate(
             model="dall-e-3",
             prompt=spec.prompt[:1000],
             size="1024x1024",
             n=1
-        ))
+        )
         print(f"DALL-E response: {result.data[0] if result.data else 'No data'}")
 
         if result.data and result.data[0].b64_json:
@@ -389,23 +651,28 @@ async def diffusion_adapter(spec: VisualizationSpec, openai_client: AsyncOpenAI)
 
     except Exception as e:
         print(f"DALL-E ERROR: {e}")
-        # PLACEHOLDER IMAGE
-        plt.figure(figsize=(12, 8))
-        plt.imshow([[0.2,0.4],[0.6,0.8]], cmap='plasma', extent=[0,10,0,10])
-        plt.title(f"Conceptual: {spec.title}", fontsize=16, pad=20)
-        plt.axis('off')
-        plt.savefig(path, bbox_inches='tight', dpi=150, facecolor='black')
-        plt.close()
+        # Premium placeholder image
+        _setup_premium_style()
+        fig, ax = plt.subplots(figsize=(12, 8))
+        gradient = np.linspace(0, 1, 256).reshape(1, -1)
+        gradient = np.vstack([gradient] * 128)
+        ax.imshow(gradient, cmap='twilight', aspect='auto', extent=[0, 10, 0, 10])
+        ax.text(5, 5, f"Conceptual\n{spec.title}", fontsize=20, fontweight='bold',
+               ha='center', va='center', color='white',
+               path_effects=[patheffects.withStroke(linewidth=3, foreground='black')])
+        ax.axis('off')
+        fig.savefig(path, bbox_inches='tight', dpi=200, facecolor=PALETTE["bg_dark"])
+        plt.close(fig)
         print(f"Diffusion placeholder → {path}")
         return path
 
-    # SAVE
     with open(path, 'wb') as f:
         f.write(image_bytes)
     print(f"Diffusion SUCCESS → {path} ({len(image_bytes)//1000}KB)")
     return path
 
-# Router (fixed dict error: use model_dump())
+
+# =================== VISUALIZATION ROUTER ===================
 async def visualization_router(state: GraphState):
     analysis_dict = state["analysis"]
     analysis = AnalysisOutput.model_validate(analysis_dict)
@@ -418,7 +685,7 @@ async def visualization_router(state: GraphState):
             elif spec.type == "graphviz":
                 path = graphviz_adapter(spec)
             elif spec.type == "diffusion":
-                path = await diffusion_adapter(spec, openai_client)  # Handle async in main
+                path = await diffusion_adapter(spec, openai_client)
             else:
                 continue
 
@@ -430,8 +697,11 @@ async def visualization_router(state: GraphState):
         except Exception as e:
             print(f"Visualization failed: {spec.title}")
             print("Error:", e)
+            import traceback
+            traceback.print_exc()
 
     return {"outputs": outputs}
+
 
 def route_decision(state: GraphState):
     analysis_dict = state["analysis"]
@@ -445,7 +715,8 @@ def route_decision(state: GraphState):
         return "visualize"
     return END
 
-# Build Graph
+
+# =================== BUILD GRAPH ===================
 builder = StateGraph(GraphState)
 builder.add_node("planner", planner_node)
 builder.add_node("visualize", visualization_router)
@@ -463,7 +734,8 @@ builder.add_edge("visualize", END)
 
 app = builder.compile()
 
-# Public async runner for FastAPI
+
+# =================== PUBLIC ASYNC RUNNER ===================
 async def run_graph(text: str):
     result = await app.ainvoke({"text": text, "analysis": {}, "outputs": []})
 
