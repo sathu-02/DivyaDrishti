@@ -217,7 +217,7 @@ export default function ChatInterface() {
         ...prev,
         {
           id: Date.now(),
-          text: "Error communicating with server.",
+          text: "We encountered an issue while generating your analysis. Please try submitting your request again.",
           sender: "ai",
         },
       ]);
@@ -425,7 +425,7 @@ export default function ChatInterface() {
                       <polyline points="21 15 16 10 5 21"></polyline>
                     </svg>
                   </div>
-                  <span className="render-text">Generating Analysis...</span>
+                  <span className="render-text">Analyzing...</span>
                 </div>
               ) : msg.sender === "user" && msg.text.length > 300 ? (
                 <div
@@ -473,34 +473,42 @@ export default function ChatInterface() {
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '4px',
-                        marginTop: '8px',
-                        padding: '4px 10px',
-                        border: 'none',
+                        gap: '6px',
+                        marginTop: '12px',
+                        padding: '6px 14px',
+                        border: speakingMsgId === msg.id
+                          ? '1px solid rgba(251, 113, 133, 0.3)'
+                          : ttsLoading === msg.id
+                            ? '1px solid rgba(251, 191, 36, 0.3)'
+                            : '1px solid rgba(56, 189, 248, 0.3)',
                         borderRadius: '20px',
                         cursor: ttsLoading === msg.id ? 'wait' : 'pointer',
-                        fontSize: '0.75rem',
+                        fontSize: '0.8rem',
+                        fontWeight: '500',
                         fontFamily: 'inherit',
                         transition: 'all 0.2s ease',
                         background: speakingMsgId === msg.id
-                          ? 'rgba(251, 113, 133, 0.15)'
+                          ? 'linear-gradient(135deg, rgba(251, 113, 133, 0.1), rgba(225, 29, 72, 0.05))'
                           : ttsLoading === msg.id
-                            ? 'rgba(251, 191, 36, 0.12)'
-                            : 'rgba(30, 64, 99, 0.08)',
-                        color: speakingMsgId === msg.id ? '#fb7185'
+                            ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(217, 119, 6, 0.05))'
+                            : 'linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(59, 130, 246, 0.05))',
+                        color: speakingMsgId === msg.id ? '#e11d48'
                           : ttsLoading === msg.id ? '#d97706'
-                            : '#64748b',
+                            : '#0369a1',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
                       }}
                       onMouseOver={(e) => {
                         if (speakingMsgId !== msg.id && ttsLoading !== msg.id) {
-                          e.currentTarget.style.background = 'rgba(30, 64, 99, 0.15)';
-                          e.currentTarget.style.color = '#1e4063';
+                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(59, 130, 246, 0.1))';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                          e.currentTarget.style.boxShadow = '0 4px 10px rgba(56, 189, 248, 0.15)';
                         }
                       }}
                       onMouseOut={(e) => {
                         if (speakingMsgId !== msg.id && ttsLoading !== msg.id) {
-                          e.currentTarget.style.background = 'rgba(30, 64, 99, 0.08)';
-                          e.currentTarget.style.color = '#64748b';
+                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(59, 130, 246, 0.05))';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.04)';
                         }
                       }}
                     >
@@ -552,10 +560,12 @@ export default function ChatInterface() {
           position: "relative",
           display: "flex",
           flexDirection: "column",
-          backgroundColor: "var(--bg-primary)",
-          borderRadius: "24px",
-          border: "1px solid var(--border-color)",
-          padding: "0.5rem 1rem",
+          backgroundColor: "#ffffff",
+          borderRadius: "32px",
+          border: "1px solid rgba(0,0,0,0.06)",
+          padding: "0.8rem 1.4rem",
+          boxShadow: "0 12px 40px -12px rgba(0,0,0,0.1), 0 4px 12px -4px rgba(0,0,0,0.05)",
+          marginBottom: "0.5rem"
         }}
       >
         <input
@@ -630,7 +640,7 @@ export default function ChatInterface() {
           </div>
         )}
 
-        <div style={{ display: "flex", alignItems: "center", width: "100%", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", width: "100%", gap: "12px" }}>
           {/* Upload Button — LEFT */}
           <button
             type="button"
@@ -638,16 +648,16 @@ export default function ChatInterface() {
             disabled={isUploading}
             title={`Upload file (PDF, DOCX, DOC, TXT) • Max ${MAX_FILE_SIZE_MB}MB`}
             style={{
-              background: isUploading ? 'rgba(251, 191, 36, 0.12)' : 'transparent',
-              color: isUploading ? '#d97706' : '#94a3b8',
-              border: isUploading ? 'none' : '1px solid #d1d5db',
-              borderRadius: '50%', width: '36px', height: '36px',
+              background: isUploading ? 'rgba(251, 191, 36, 0.12)' : 'rgba(241, 245, 249, 0.8)',
+              color: isUploading ? '#d97706' : '#64748b',
+              border: 'none',
+              borderRadius: '50%', width: '40px', height: '40px',
               cursor: isUploading ? 'wait' : 'pointer',
               flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
               transition: 'all 0.2s ease',
             }}
-            onMouseOver={e => { if (!isUploading) { e.currentTarget.style.background = 'rgba(30,64,99,0.1)'; e.currentTarget.style.color = 'var(--accent-primary)'; } }}
-            onMouseOut={e => { if (!isUploading) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#94a3b8'; } }}
+            onMouseOver={e => { if (!isUploading) { e.currentTarget.style.background = 'rgba(226, 232, 240, 1)'; e.currentTarget.style.color = '#0f172a'; e.currentTarget.style.transform = 'scale(1.05)'; } }}
+            onMouseOut={e => { if (!isUploading) { e.currentTarget.style.background = 'rgba(241, 245, 249, 0.8)'; e.currentTarget.style.color = '#64748b'; e.currentTarget.style.transform = 'scale(1)'; } }}
           >
             {isUploading ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
@@ -665,8 +675,8 @@ export default function ChatInterface() {
             type="text"
             style={{
               flex: 1, border: "none", outline: "none",
-              background: "transparent", padding: "0.5rem 0.5rem",
-              fontSize: "1rem", color: "var(--text-primary)",
+              background: "transparent", padding: "0.2rem 0.5rem",
+              fontSize: "1.05rem", color: "#0f172a", fontWeight: "400",
             }}
             value={inputValue}
             onPaste={(e) => {
@@ -686,12 +696,12 @@ export default function ChatInterface() {
             onClick={toggleListening}
             title={isListening ? "Stop listening" : "Start voice input"}
             style={{
-              background: isListening ? "#fb7185" : "transparent",
-              color: isListening ? "white" : "#94a3b8",
-              border: isListening ? "none" : "1px solid #d1d5db",
+              background: isListening ? "#ef4444" : "rgba(241, 245, 249, 0.8)",
+              color: isListening ? "white" : "#64748b",
+              border: "none",
               borderRadius: "50%",
-              width: "38px",
-              height: "38px",
+              width: "40px",
+              height: "40px",
               cursor: "pointer",
               flexShrink: 0,
               display: "flex",
@@ -700,6 +710,8 @@ export default function ChatInterface() {
               transition: "all 0.2s ease",
               animation: isListening ? "pulse-mic 1.5s ease-in-out infinite" : "none",
             }}
+            onMouseOver={e => { if (!isListening) { e.currentTarget.style.background = 'rgba(226, 232, 240, 1)'; e.currentTarget.style.color = '#0f172a'; e.currentTarget.style.transform = 'scale(1.05)'; } }}
+            onMouseOut={e => { if (!isListening) { e.currentTarget.style.background = 'rgba(241, 245, 249, 0.8)'; e.currentTarget.style.color = '#64748b'; e.currentTarget.style.transform = 'scale(1)'; } }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
@@ -713,21 +725,30 @@ export default function ChatInterface() {
             type="submit"
             disabled={(!inputValue.trim() && !pastedDraft.trim()) || isLoading}
             style={{
-              background: (inputValue.trim() || pastedDraft.trim()) ? "#1e4063" : "#e0e0e0",
-              color: "white",
+              background: (inputValue.trim() || pastedDraft.trim()) ? "linear-gradient(135deg, #0f172a, #1e293b)" : "#f1f5f9",
+              color: (inputValue.trim() || pastedDraft.trim()) ? "white" : "#cbd5e1",
               border: "none",
               borderRadius: "50%",
               width: "40px",
               height: "40px",
               cursor: (inputValue.trim() || pastedDraft.trim()) ? "pointer" : "not-allowed",
-              flexShrink: 0
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: (inputValue.trim() || pastedDraft.trim()) ? "0 4px 12px rgba(15, 23, 42, 0.2)" : "none",
+              transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+              transform: (inputValue.trim() || pastedDraft.trim()) ? "scale(1.05)" : "scale(1)",
             }}
           >
-            ➤
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: "translateX(1px)" }}>
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
           </button>
         </div>
 
-        {/* Animations */}
+        {/* Animations & Scrollbars */}
         <style>{`
           @keyframes pulse-mic {
             0%, 100% { box-shadow: 0 0 0 0 rgba(251, 113, 133, 0.4); }
@@ -736,6 +757,21 @@ export default function ChatInterface() {
           @keyframes spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
+          }
+          .premium-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+          }
+          .premium-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+            margin: 4px;
+          }
+          .premium-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.3);
+            border-radius: 10px;
+          }
+          .premium-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, 0.5);
           }
         `}</style>
       </form>
@@ -746,8 +782,8 @@ export default function ChatInterface() {
           style={{
             position: "fixed",
             inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.4)",
-            backdropFilter: "blur(4px)",
+            backgroundColor: "rgba(15, 23, 42, 0.6)",
+            backdropFilter: "blur(8px)",
             zIndex: 9999,
             display: "flex",
             alignItems: "center",
@@ -758,38 +794,45 @@ export default function ChatInterface() {
         >
           <div
             style={{
-              background: "#1e293b",
+              background: "linear-gradient(145deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98))",
+              backdropFilter: "blur(12px)",
               color: "#f8fafc",
-              borderRadius: "16px",
+              borderRadius: "20px",
               width: "100%",
-              maxWidth: "800px",
-              maxHeight: "80vh",
+              maxWidth: "850px",
+              maxHeight: "85vh",
               display: "flex",
               flexDirection: "column",
-              boxShadow: "0 20px 40px rgba(0,0,0,0.4)",
-              border: "1px solid #334155"
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255,255,255,0.05)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ padding: "1.5rem", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: "600" }}>Pasted content</h3>
-                <span style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
-                  {(new Blob([expandedText]).size / 1024).toFixed(2)} KB • {expandedText.split('\n').length} lines
-                </span>
+            <div style={{ padding: "1.2rem 1.5rem", borderBottom: "1px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "rgba(56, 189, 248, 0.1)", color: "#38bdf8", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: "600", letterSpacing: "0.2px" }}>Raw Data Context</h3>
+                  <span style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: "500" }}>
+                    {(new Blob([expandedText]).size / 1024).toFixed(2)} KB • {expandedText.split('\n').length} lines
+                  </span>
+                </div>
               </div>
               <button
                 onClick={() => setExpandedText(null)}
                 style={{
-                  background: "transparent", border: "1px solid #475569", borderRadius: "8px",
-                  width: "32px", height: "32px", color: "#94a3b8", cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center"
+                  background: "rgba(255,255,255,0.05)", border: "none", borderRadius: "50%",
+                  width: "32px", height: "32px", color: "#cbd5e1", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s"
                 }}
+                onMouseOver={(e) => { e.currentTarget.style.background = "rgba(239, 68, 68, 0.15)"; e.currentTarget.style.color = "#ef4444"; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "#cbd5e1"; }}
               >
                 ✕
               </button>
             </div>
-            <div style={{ padding: "1.5rem", overflowY: "auto", fontSize: "0.95rem", lineHeight: "1.6", whiteSpace: "pre-wrap", fontFamily: "monospace", color: "#cbd5e1" }}>
+            <div className="premium-scrollbar" style={{ padding: "1.5rem", flex: 1, minHeight: 0, overflowY: "auto", fontSize: "0.95rem", lineHeight: "1.7", whiteSpace: "pre-wrap", fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace", color: "#e2e8f0" }}>
               {expandedText}
             </div>
           </div>
@@ -802,8 +845,8 @@ export default function ChatInterface() {
           style={{
             position: "fixed",
             inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.4)",
-            backdropFilter: "blur(4px)",
+            backgroundColor: "rgba(15, 23, 42, 0.6)",
+            backdropFilter: "blur(8px)",
             zIndex: 9999,
             display: "flex",
             alignItems: "center",
@@ -814,47 +857,57 @@ export default function ChatInterface() {
         >
           <div
             style={{
-              background: "#1e293b",
+              background: "linear-gradient(145deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98))",
+              backdropFilter: "blur(12px)",
               color: "#f8fafc",
-              borderRadius: "16px",
+              borderRadius: "20px",
               width: "100%",
-              maxWidth: "800px",
-              height: "80vh",
+              maxWidth: "850px",
+              height: "85vh",
               display: "flex",
               flexDirection: "column",
-              boxShadow: "0 20px 40px rgba(0,0,0,0.4)",
-              border: "1px solid #334155"
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255,255,255,0.05)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ padding: "1.5rem", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: "600" }}>Edit Pasted Draft</h3>
+            <div style={{ padding: "1.2rem 1.5rem", borderBottom: "1px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "rgba(52, 211, 153, 0.1)", color: "#34d399", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: "600", letterSpacing: "0.2px" }}>Edit Draft Context</h3>
+                </div>
               </div>
               <button
                 onClick={() => setIsEditingDraft(false)}
                 style={{
-                  background: "var(--accent-primary)", border: "none", borderRadius: "8px",
-                  padding: "0.5rem 1rem", color: "white", cursor: "pointer", fontWeight: "500"
+                  background: "linear-gradient(135deg, #38bdf8, #3b82f6)", border: "none", borderRadius: "10px",
+                  padding: "0.6rem 1.2rem", color: "white", cursor: "pointer", fontWeight: "600", fontSize: "0.9rem",
+                  boxShadow: "0 4px 12px rgba(56, 189, 248, 0.3)", transition: "transform 0.2s"
                 }}
+                onMouseOver={(e) => e.currentTarget.style.transform = "translateY(-1px)"}
+                onMouseOut={(e) => e.currentTarget.style.transform = "translateY(0)"}
               >
-                Done
+                Save & Close
               </button>
             </div>
-            <div style={{ flex: 1, padding: "0" }}>
+            <div style={{ flex: 1, minHeight: 0, padding: "0", display: "flex" }}>
               <textarea
+                className="premium-scrollbar"
                 value={pastedDraft}
                 onChange={(e) => setPastedDraft(e.target.value)}
                 style={{
                   width: "100%",
                   height: "100%",
+                  flex: 1,
                   background: "transparent",
-                  color: "#cbd5e1",
+                  color: "#e2e8f0",
                   border: "none",
                   padding: "1.5rem",
                   fontSize: "0.95rem",
-                  lineHeight: "1.6",
-                  fontFamily: "monospace",
+                  lineHeight: "1.7",
+                  fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace",
                   outline: "none",
                   resize: "none"
                 }}
