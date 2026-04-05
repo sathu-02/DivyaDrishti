@@ -155,6 +155,7 @@ def send_otp_email(to_email: str, otp_code: str, username: str = "User"):
     """Send a beautifully styled OTP email."""
     if not SMTP_USER or not SMTP_PASSWORD:
         print("SMTP not configured, skipping email.")
+        print(f"\n--- 🛠️ DEVELOPMENT MODE: The OTP for {to_email} is: {otp_code} ---\n")
         return False
 
     html_body = f"""
