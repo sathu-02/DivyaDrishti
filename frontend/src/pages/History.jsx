@@ -3,12 +3,14 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 import ProfileDropdown from "../components/ProfileDropdown";
+import ImageModal from "../components/ImageModal";
 
 
 export default function History() {
   const [sessions, setSessions] = useState([]);
-      const { user, logout } = useAuth(); // ✅ single declaration
-      const navigate = useNavigate();
+  const [expandedImage, setExpandedImage] = useState(null);
+  const { user, logout } = useAuth(); // ✅ single declaration
+  const navigate = useNavigate();
 
 
   useEffect(() => {
@@ -205,10 +207,12 @@ export default function History() {
                             <img
                               src={viz.data.url}
                               alt={`Visualization ${idx + 1}`}
+                              onClick={() => setExpandedImage(viz.data.url)}
                               style={{
                                 width: "100%",
                                 height: "100%",
                                 objectFit: "contain",
+                                cursor: "pointer",
                               }}
                             />
                           )}
@@ -229,6 +233,13 @@ export default function History() {
           </section>
         </main>
       </div>
+      {/* Modal for Expanded Image */}
+      {expandedImage && (
+        <ImageModal
+          imageUrl={expandedImage}
+          onClose={() => setExpandedImage(null)}
+        />
+      )}
     </div>
   );
 }
