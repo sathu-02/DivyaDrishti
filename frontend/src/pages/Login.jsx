@@ -11,10 +11,12 @@ export default function Login() {
 
     // 2FA state
     const [requires2FA, setRequires2FA] = useState(false);
+    const [requiresTOTP, setRequiresTOTP] = useState(false);
+    const [tempToken, setTempToken] = useState('');
     const [totpCode, setTotpCode] = useState('');
 
     const googleBtnRef = useRef(null);
-    const { login, googleAuth } = useAuth();
+    const { login, googleAuth, login2FA_totp } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -27,7 +29,7 @@ export default function Login() {
             return;
         }
 
-        if (requires2FA && !totpCode) {
+        if ((requires2FA || requiresTOTP) && !totpCode) {
             setError('Please enter your 2FA code');
             return;
         }
@@ -36,10 +38,22 @@ export default function Login() {
         setError('');
 
         try {
+            if (requiresTOTP) {
+                await login2FA_totp(tempToken, totpCode);
+                navigate(from, { replace: true });
+                return;
+            }
+
             const result = await login(email, password, totpCode);
 
             // Check if 2FA is required
-            if (result.requires_2fa) {
+            if (result.requires_2fa === "totp") {
+                setRequiresTOTP(true);
+                setTempToken(result.access_token);
+                setError('');
+                setLoading(false);
+                return;
+            } else if (result.requires_2fa) {
                 setRequires2FA(true);
                 setError('');
                 setLoading(false);
@@ -133,7 +147,7 @@ export default function Login() {
                 <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', position: 'relative', zIndex: 10 }}>
                     <div style={{ background: '#fcfaf4', borderRadius: '16px', padding: '2.5rem 2rem', width: '100%', maxWidth: '400px', boxShadow: '0 8px 32px rgba(30,64,99,0.1)', border: '1px solid #efeadd' }}>
                         <h2 style={{ fontFamily: '"Inter", sans-serif', fontSize: '1.5rem', fontWeight: '700', color: '#1e4063', textAlign: 'center', marginBottom: '1.5rem' }}>
-                            {requires2FA ? '🔐 Enter 2FA Code' : 'Welcome Back'}
+                            {requiresTOTP ? '🛡️ Authenticator App' : requires2FA ? '🔐 Enter 2FA Code' : 'Welcome Back'}
                         </h2>
 
                         {error && (
@@ -143,7 +157,7 @@ export default function Login() {
                         )}
 
                         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            {!requires2FA ? (
+                            {(!requires2FA && !requiresTOTP) ? (
                                 <>
                                     <input id="email" type="email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
                                     <div style={{ position: 'relative', width: '100%' }}>
@@ -156,7 +170,7 @@ export default function Login() {
                             ) : (
                                 <>
                                     <p style={{ color: '#64748b', fontSize: '0.85rem', textAlign: 'center', margin: '0 0 0.5rem 0' }}>
-                                        We've sent a 6-digit OTP to <strong style={{color:'#1e4063'}}>{email}</strong>. Check your inbox.
+                                        {requiresTOTP ? "Enter the 6-digit code from your Authenticator App." : <>We've sent an OTP to <strong style={{ color: '#1e4063' }}>{email}</strong>.</>}
                                     </p>
                                     <input
                                         type="text"
@@ -169,7 +183,7 @@ export default function Login() {
                                     />
                                     <button
                                         type="button"
-                                        onClick={() => { setRequires2FA(false); setTotpCode(''); setError(''); }}
+                                        onClick={() => { setRequires2FA(false); setRequiresTOTP(false); setTotpCode(''); setError(''); setTempToken(''); }}
                                         style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.8rem', cursor: 'pointer', marginTop: '-0.5rem' }}
                                     >
                                         ← Back to login
@@ -186,11 +200,11 @@ export default function Login() {
                                     cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1,
                                 }}
                             >
-                                {loading ? 'Logging in...' : requires2FA ? 'Verify & Log In' : 'Log In'}
+                                {loading ? 'Logging in...' : (requires2FA || requiresTOTP) ? 'Verify & Log In' : 'Log In'}
                             </button>
                         </form>
 
-                        {!requires2FA && (
+                        {(!requires2FA && !requiresTOTP) && (
                             <>
                                 {/* Divider */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', margin: '1.2rem 0' }}>

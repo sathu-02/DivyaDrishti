@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import axios from "axios";
+import TwoFactorSetup from "./TwoFactorSetup";
 
 export default function ProfileDropdown() {
   const { user, logout } = useAuth();
@@ -14,6 +15,7 @@ export default function ProfileDropdown() {
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [feedbackError, setFeedbackError] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [show2FA, setShow2FA] = useState(false);
   const dropdownRef = useRef(null);
 
   // Close dropdown on outside click
@@ -125,6 +127,21 @@ export default function ProfileDropdown() {
               </div>
             </div>
 
+            {/* 2FA Setup */}
+            <button
+              onClick={() => { setShowProfile(false); setShow2FA(true); }}
+              style={{
+                width: "100%", textAlign: "left", background: "none", border: "none",
+                padding: "0.5rem 0.6rem", borderRadius: "8px", cursor: "pointer",
+                color: "#0f172a", fontSize: "0.88rem", display: "flex",
+                alignItems: "center", gap: "0.6rem",
+              }}
+              onMouseOver={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+              onMouseOut={(e) => (e.currentTarget.style.background = "none")}
+            >
+              🛡️ Enable 2FA Setup
+            </button>
+
             {/* Feedback */}
             <button
               onClick={() => { setShowProfile(false); setShowFeedback(true); }}
@@ -175,6 +192,11 @@ export default function ProfileDropdown() {
           </div>
         )}
       </div>
+
+      {/* 2FA Modal */}
+      {show2FA && (
+        <TwoFactorSetup onClose={() => setShow2FA(false)} />
+      )}
 
       {/* Feedback Modal */}
       {showFeedback && (

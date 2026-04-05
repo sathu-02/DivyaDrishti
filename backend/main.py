@@ -286,6 +286,15 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             record_login_attempt(email)
             raise HTTPException(status_code=401, detail="Invalid or expired OTP code")
 
+    # Check if app-based TOTP 2FA is active
+    if user.get("totp_verified", False):
+        access_token = create_access_token(data={"sub": str(user["_id"]), "type": "temp_2fa"})
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "requires_2fa": "totp",
+        }
+
     # Success
     clear_login_attempts(email)
 
@@ -298,6 +307,75 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         "token_type": "bearer",
         "requires_2fa": False,
     }
+
+
+# -------------------------
+# App-based 2FA (TOTP) Setup & Verification
+# -------------------------
+class TOTPSetupRequest(BaseModel):
+    code: str
+
+class Login2FARequest(BaseModel):
+    temp_token: str
+    code: str
+
+@app.get("/2fa/setup")
+async def setup_2fa(current_user: dict = Depends(get_current_user)):
+    from bson import ObjectId
+    user = users_collection.find_one({"_id": ObjectId(current_user["user_id"])})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    secret = user.get("totp_secret")
+    if not secret:
+        secret = generate_totp_secret()
+        users_collection.update_one({"_id": user["_id"]}, {"$set": {"totp_secret": secret}})
+    
+    uri = get_totp_uri(secret, user.get("email", "User"))
+    return {"secret": secret, "uri": uri}
+
+@app.post("/2fa/verify")
+async def verify_2fa_setup(req: TOTPSetupRequest, current_user: dict = Depends(get_current_user)):
+    from bson import ObjectId
+    user = users_collection.find_one({"_id": ObjectId(current_user["user_id"])})
+    secret = user.get("totp_secret")
+    
+    if not secret or not verify_totp(secret, req.code):
+        raise HTTPException(status_code=400, detail="Invalid authenticator code.")
+    
+    users_collection.update_one({"_id": user["_id"]}, {"$set": {"totp_verified": True}})
+    return {"message": "2FA successfully enabled."}
+
+@app.post("/login/2fa")
+async def login_2fa(req: Login2FARequest):
+    try:
+        from auth import SECRET_KEY, ALGORITHM
+        from jose import jwt
+        payload = jwt.decode(req.temp_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "temp_2fa":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+            
+        from bson import ObjectId
+        user = users_collection.find_one({"_id": ObjectId(payload.get("sub"))})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        secret = user.get("totp_secret")
+        if not verify_totp(secret, req.code):
+            raise HTTPException(status_code=401, detail="Invalid authenticator code.")
+            
+        clear_login_attempts(user["email"])
+        
+        access_token = create_access_token(data={"sub": str(user["_id"])})
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "requires_2fa": False,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token.")
 
 
 # -------------------------

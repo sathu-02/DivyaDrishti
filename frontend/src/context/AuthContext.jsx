@@ -121,8 +121,37 @@ export function AuthProvider({ children }) {
         }
     };
 
+    const login2FA_totp = async (tempToken, code) => {
+        try {
+            const response = await API.post("/login/2fa", { temp_token: tempToken, code });
+            const token = response.data.access_token;
+            localStorage.setItem("token", token);
+            const me = await API.get("/me", { headers: { Authorization: `Bearer ${token}` } });
+            setUser(me.data);
+            localStorage.setItem("user", JSON.stringify(me.data));
+            return response.data;
+        } catch (error) {
+            throw new Error(error.response?.data?.detail || "Invalid code");
+        }
+    };
+
+    const setupTOTP = async () => {
+        const token = localStorage.getItem("token");
+        const res = await API.get("/2fa/setup", { headers: { Authorization: `Bearer ${token}` } });
+        return res.data;
+    };
+
+    const verifyTOTPSetup = async (code) => {
+        const token = localStorage.getItem("token");
+        const res = await API.post("/2fa/verify", { code }, { headers: { Authorization: `Bearer ${token}` } });
+        const me = await API.get("/me", { headers: { Authorization: `Bearer ${token}` } });
+        setUser(me.data);
+        localStorage.setItem("user", JSON.stringify(me.data));
+        return res.data;
+    };
+
     return (
-        <AuthContext.Provider value={{ user, login, logout, signup, googleAuth, verify2FA, resendOTP }}>
+        <AuthContext.Provider value={{ user, login, logout, signup, googleAuth, verify2FA, resendOTP, login2FA_totp, setupTOTP, verifyTOTPSetup }}>
             {children}
         </AuthContext.Provider>
     );
