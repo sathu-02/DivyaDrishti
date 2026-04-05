@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import API from "../api";
 import { useChat } from "../context/ChatContext";
 import { useAuth } from "../context/AuthContext";
+import ImageModal from "./ImageModal";
 
 const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -15,6 +16,7 @@ export default function ChatInterface() {
   const [inputValue, setInputValue] = useState("");
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const [expandedImage, setExpandedImage] = useState(null);
   const [expandedText, setExpandedText] = useState(null);
   const [pastedDraft, setPastedDraft] = useState("");
   const [isEditingDraft, setIsEditingDraft] = useState(false);
@@ -259,7 +261,7 @@ export default function ChatInterface() {
     if (file.size > MAX_FILE_SIZE_BYTES) {
       setMessages((prev) => [
         ...prev,
-        { id: Date.now(), text: `❌ File too large: ${(file.size/1024/1024).toFixed(1)} MB. Maximum allowed is ${MAX_FILE_SIZE_MB} MB.`, sender: "ai" },
+        { id: Date.now(), text: `❌ File too large: ${(file.size / 1024 / 1024).toFixed(1)} MB. Maximum allowed is ${MAX_FILE_SIZE_MB} MB.`, sender: "ai" },
       ]);
       return;
     }
@@ -270,7 +272,7 @@ export default function ChatInterface() {
     // Simulate progress for UX (real progress via onUploadProgress)
     setMessages((prev) => [
       ...prev,
-      { id: Date.now(), text: `📎 Uploading: ${file.name} (${(file.size/1024).toFixed(0)} KB)...`, sender: "user" },
+      { id: Date.now(), text: `📎 Uploading: ${file.name} (${(file.size / 1024).toFixed(0)} KB)...`, sender: "user" },
     ]);
 
     try {
@@ -380,9 +382,11 @@ export default function ChatInterface() {
                       <img
                         src={msg.visualization.data.url}
                         alt="Visualization"
+                        onClick={() => setExpandedImage(msg.visualization.data.url)}
                         style={{
                           maxWidth: "100%",
                           borderRadius: "10px",
+                          cursor: "pointer",
                         }}
                       />
                       <button
@@ -424,7 +428,7 @@ export default function ChatInterface() {
                   <span className="render-text">Generating Analysis...</span>
                 </div>
               ) : msg.sender === "user" && msg.text.length > 300 ? (
-                <div 
+                <div
                   onClick={() => setExpandedText(msg.text)}
                   style={{
                     background: 'rgba(255, 255, 255, 0.5)',
@@ -481,11 +485,11 @@ export default function ChatInterface() {
                         background: speakingMsgId === msg.id
                           ? 'rgba(251, 113, 133, 0.15)'
                           : ttsLoading === msg.id
-                          ? 'rgba(251, 191, 36, 0.12)'
-                          : 'rgba(30, 64, 99, 0.08)',
+                            ? 'rgba(251, 191, 36, 0.12)'
+                            : 'rgba(30, 64, 99, 0.08)',
                         color: speakingMsgId === msg.id ? '#fb7185'
                           : ttsLoading === msg.id ? '#d97706'
-                          : '#64748b',
+                            : '#64748b',
                       }}
                       onMouseOver={(e) => {
                         if (speakingMsgId !== msg.id && ttsLoading !== msg.id) {
@@ -524,7 +528,7 @@ export default function ChatInterface() {
             </div>
 
             {msg.sender === "user" && (
-              <div 
+              <div
                 className="avatar user-avatar"
                 style={{
                   display: 'flex',
@@ -580,7 +584,7 @@ export default function ChatInterface() {
 
         {pastedDraft && (
           <div style={{ paddingBottom: "10px", marginBottom: "10px", width: "100%", borderBottom: "1px solid var(--border-color)" }}>
-            <div 
+            <div
               style={{
                 background: 'rgba(255, 255, 255, 0.5)',
                 border: '1px solid rgba(182, 154, 116, 0.4)',
@@ -642,8 +646,8 @@ export default function ChatInterface() {
               flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
               transition: 'all 0.2s ease',
             }}
-            onMouseOver={e => { if (!isUploading) { e.currentTarget.style.background = 'rgba(30,64,99,0.1)'; e.currentTarget.style.color = 'var(--accent-primary)'; }}}
-            onMouseOut={e => { if (!isUploading) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#94a3b8'; }}}
+            onMouseOver={e => { if (!isUploading) { e.currentTarget.style.background = 'rgba(30,64,99,0.1)'; e.currentTarget.style.color = 'var(--accent-primary)'; } }}
+            onMouseOut={e => { if (!isUploading) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#94a3b8'; } }}
           >
             {isUploading ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
@@ -777,7 +781,7 @@ export default function ChatInterface() {
               <button
                 onClick={() => setExpandedText(null)}
                 style={{
-                  background: "transparent", border: "1px solid #475569", borderRadius: "8px", 
+                  background: "transparent", border: "1px solid #475569", borderRadius: "8px",
                   width: "32px", height: "32px", color: "#94a3b8", cursor: "pointer",
                   display: "flex", alignItems: "center", justifyContent: "center"
                 }}
@@ -830,7 +834,7 @@ export default function ChatInterface() {
               <button
                 onClick={() => setIsEditingDraft(false)}
                 style={{
-                  background: "var(--accent-primary)", border: "none", borderRadius: "8px", 
+                  background: "var(--accent-primary)", border: "none", borderRadius: "8px",
                   padding: "0.5rem 1rem", color: "white", cursor: "pointer", fontWeight: "500"
                 }}
               >
@@ -858,6 +862,13 @@ export default function ChatInterface() {
             </div>
           </div>
         </div>
+      )}
+      {/* Modal for Expanded Image */}
+      {expandedImage && (
+        <ImageModal
+          imageUrl={expandedImage}
+          onClose={() => setExpandedImage(null)}
+        />
       )}
     </div>
   );
